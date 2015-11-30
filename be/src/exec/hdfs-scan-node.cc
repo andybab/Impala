@@ -357,6 +357,12 @@ Status HdfsScanNode::Prepare(RuntimeState* state) {
     partition_ids_.insert(split.partition_id);
     HdfsPartitionDescriptor* partition_desc =
         hdfs_table_->GetPartition(split.partition_id);
+    if (partition_desc == NULL) {
+      stringstream ss;
+      ss << "Could not find partition with id: " << split.partition_id;
+      return Status(ss.str());
+    }
+
     filesystem::path file_path(partition_desc->location());
     file_path.append(split.file_name, filesystem::path::codecvt());
     const string& native_file_path = file_path.native();
@@ -371,12 +377,6 @@ Status HdfsScanNode::Prepare(RuntimeState* state) {
       file_desc->file_compression = split.file_compression;
       RETURN_IF_ERROR(HdfsFsCache::instance()->GetConnection(
           native_file_path, &file_desc->fs, &fs_cache));
-
-      if (partition_desc == NULL) {
-        stringstream ss;
-        ss << "Could not find partition with id: " << split.partition_id;
-        return Status(ss.str());
-      }
       ++num_unqueued_files_;
       per_type_files_[partition_desc->file_format()].push_back(file_desc);
     } else {
@@ -649,8 +649,10 @@ void HdfsScanNode::Close(RuntimeState* state) {
   // Close all the partitions scanned by the scan node
   BOOST_FOREACH(const int64_t& partition_id, partition_ids_) {
     HdfsPartitionDescriptor* partition_desc = hdfs_table_->GetPartition(partition_id);
-    DCHECK(partition_desc != NULL);
-    partition_desc->CloseExprs(state);
+    //Skip NULL partition_desc
+    if(NULL != partition_desc){
+      partition_desc->CloseExprs(state);
+    }
   }
 
   ScanNode::Close(state);
